@@ -1,2 +1,2 @@
 # surflink
-Extracts urls from webpage
+Extracts links from webpage
