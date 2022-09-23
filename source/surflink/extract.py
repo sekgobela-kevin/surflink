@@ -49,11 +49,18 @@ def get_links_from_elements(elements, attrs=None):
         links.extend(get_links_from_element(element, attrs))
     return links
 
+def get_element_attr_value(element, attr):
+    # Gets element attribute value
+    if element.has_attr(attr):
+        return element[attr]
 
 def get_element_attr_by_value(element, value):
     # Gets attribute of element with provided value
-    index = list(element.attrs.values()).index(value)
-    return list(element.attrs.keys())[index]
+    try:
+        index = list(element.attrs.values()).index(value)
+        return list(element.attrs.keys())[index]
+    except ValueError:
+        pass
 
 
 if __name__ == "__main__":
