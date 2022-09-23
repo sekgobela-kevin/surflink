@@ -46,16 +46,31 @@ class Link():
         return self.tag_name.lower() == "link"
 
     def is_image(self):
-        return "image/" in self.content_type
+        if self.content_type.startswith("image/"):
+            return True
+        else:
+            return self.tag_name.lower() == "image"
 
     def is_audio(self):
-        return "image/" in self.content_type
+        if self.content_type.startswith("audio/"):
+            return True
+        else:
+            return self.tag_name.lower() == "audio"
 
     def is_video(self):
-        return "video/" in self.content_type
+        if self.content_type.startswith("video/"):
+            return True
+        else:
+            return self.tag_name.lower() == "audio"
 
     def is_text(self):
-        return "text/" in self.content_type
+        return self.content_type.startswith("text/")
+
+    def is_stylesheet(self):
+        if self.content_type == 'text/css':
+            return True
+        else:
+            return self.is_linked()
 
     def is_webpage(self):
         if not (self.is_script() or self.is_linked()):
@@ -125,6 +140,9 @@ class Links():
     def get_texts(self):
         return list(filter(lambda link:link.is_text(), self._links))
 
+    def get_stylesheets(self):
+        return list(filter(lambda link:link.is_stylesheet(), self._links))
+
     def get_webpages(self):
         return list(filter(lambda link:link.is_webpage(), self._links))
 
@@ -143,7 +161,7 @@ class Links():
 
 class Document(Links):
     '''Template for instances containing links from HTML/XML document'''
-    def __init__(self, markup, url=None, attrs=("src", "href"), unique=False):
+    def __init__(self, markup, url=None, attrs=None, unique=False):
         # markup: html/xml with links
         # url: url markup originates
         # attr: atributes of elements in markup to extract links.
@@ -152,9 +170,14 @@ class Document(Links):
         self._markup = markup # markup containg links(html, xml)
         self._attrs = attrs # attributes to get links
         self._url = url # url of markup
+        self._unique = unique
+        
+        if not isinstance(markup, (str, bytes)):
+            err_msg = "markup should be 'str' or 'bytes' not '{}'"
+            raise TypeError(err_msg.format(self._markup.__class__.name))
+        
         if url!=None and resid.is_url(url):
             raise exception.URLError("'{}' is not url")
-        self._unique = unique
 
         # Setup links
         # Not recommended to call method within initializer.
@@ -175,9 +198,23 @@ class Document(Links):
                 # Duplicate links not allowed if self._unique is True.
                 tag_name = element.name
                 attr_name = extract.get_element_attr_by_value(element, link)
-                link_object = Link(link, tag_name, attr_name, self._url)
+                if self._url:
+                    url = self._url
+                else:
+                    url = self._get_base_link()
+                link_object = Link(link, tag_name, attr_name, url)
                 links.append(link_object)
         return links
+
+    def _get_base_link(self):
+        element = self._soup.find("base")
+        if element:
+            return Link(element, "base", None)
+
+    def get_base_link(self):
+        # Gets base link for document
+        return self._get_base_link()
+
 
 
 if __name__ == "__main__":

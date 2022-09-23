@@ -1,6 +1,9 @@
 from bs4 import BeautifulSoup
 
 
+# Elements attributes to get links
+ATTRS = ("src", "href")
+
 def create_soup(markup):
     # Creates beutufulsoup to parse provided markup
     return BeautifulSoup(markup, 'html.parser')
@@ -17,7 +20,7 @@ def get_elements_by_name(soup, name):
 def get_elements_with_links(soup, attrs=None):
     # Gets elements containing links in their attributes
     if attrs == None:
-        attrs = ["src", "href"]
+        attrs = ATTRS
     # Creates css pattern to match elements with provided attributes
     # Output: '[href], [src]
     css_pattern = ["[" + attr + "]" for attr in attrs]
@@ -28,11 +31,13 @@ def get_links_from_element(element, attrs=None):
     # Gets links from attributes of element.
     # src and href are ones likely to contain links.
     if attrs == None:
-        attrs = ["src", "href"]
+        attrs = ATTRS
     return get_element_attrs_values(element, attrs)
 
 def get_link_from_element(element, attrs=None):
     # gets link from attributes of element
+    if attrs == None:
+        attrs = ATTRS
     links = get_element_attrs_values(element, attrs)
     if links:
         return links[0]
