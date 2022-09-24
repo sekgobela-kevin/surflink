@@ -8,12 +8,13 @@ from surflink import extract
 class Link():
     '''Stores link along with other metadata'''
     def __init__(self, link, tag_name, tag_attrs, base_link=None, type=None,
-    make_absolute=False, strict=False):
+    rel_attr=None, make_absolute=False, strict=False):
         self._link = link
         self._tag_name = tag_name
         self._tag_attrs = tag_attrs
         self._base_link = base_link
         self._type = type
+        self._rel_attr = rel_attr
         self._make_absolute = make_absolute
         self._strict = strict
 
@@ -34,7 +35,12 @@ class Link():
             self._content_type = type
         else:
             #self._content_type = resid.guess_content_type(link)
-            self._content_type = document.URL(link).content_type or ""
+            if self._is_valid(False):
+                # Link without extension will be considered html.
+                # Its important to know if link is valid.
+                self._content_type = document.WebURL(link).content_type
+            else:
+                self._content_type = ""
 
     def _is_head_resource(self):
         # Checks if link is resource usually loaded in head tag.
@@ -68,21 +74,26 @@ class Link():
         else:
             return self._matches_tag_name(tag_name)
 
-    def get_link(self):
-        return self._link
-
-    def is_valid(self, strict=True):
+    def _is_valid(self, strict=True):
+        # Checks if link is valid.
         link = self._link.lower()
         if strict:
             #return resid.is_url(link)
             return document.URL(link).supported
         else:
-            if set("<>^`{|}\s\n").intersection(link):
+            if set("<>^`{|} \n").intersection(link):
                 return False
             elif link.startswith("#") or link.startswith("javascript:"):
                 return False
             else:
-                return False
+                return True
+
+    def get_link(self):
+        return self._link
+    
+    def is_valid(self, strict=True):
+        return self._is_valid(strict)
+
 
     def is_resource(self):
         return self._tag_attrs == "src"
@@ -112,18 +123,27 @@ class Link():
     def is_stylesheet(self):
         if self._strict and not self.is_linked():
             return False
-        return self._matches_content_type("text/css")
+        elif self.self._rel_attr:
+            return self.self._rel_attr.lower() == "stylesheet"
+        else:
+            return self._matches_content_type("text/css")
 
     def is_javascript(self):
         if self._strict and not self.is_script():
             return False
-        return self._matches_content_type("application/javascript")
+        else:
+            # If type for script not provided then its javascript.
+            if self._type == None and self.is_script():
+                return True
+            return self._matches_content_type("application/javascript")
 
     def is_webpage(self):
-        if not self._is_head_resource():
+        if self._strict and self._is_head_resource():
+            return False
+        else:
             # return resid.find_resource(self._link).is_webpage()
-            return document.WebURL(self._link).is_webpage()
-        return False
+            # Bug, shoud be: document.WebURL(self._link).is_webpage()
+            return self._matches_content_type("text/html")
 
     @property
     def absolute_link(self):
@@ -209,7 +229,7 @@ class Links():
 class Document(Links):
     '''Template for instances containing links from HTML/XML document'''
     def __init__(self, markup, base_url=None, attrs=None, start_tag=None,
-    unique=False, make_absoulute=False, strict=False):
+    unique=False, make_absolute=False, strict=False):
         # markup: html/xml with links
         # url: url markup originates
         # attr: atributes of elements in markup to extract links.
@@ -220,7 +240,7 @@ class Document(Links):
         self._base_url = base_url # url of markup
         self._unique = unique
         self._start_tag = start_tag
-        self._make_absoulute = make_absoulute
+        self._make_absolute = make_absolute
         self._strict = strict
         
         if not isinstance(markup, (str, bytes)):
@@ -245,6 +265,13 @@ class Document(Links):
     def _extract_links(self):
         # Creates link object containing links from markup
         links = []
+        # Setups base url to pass to Link instance
+        base_link = self._get_base_link()
+        if base_link:
+            base_url = base_link.get_link()
+        else:
+            base_url = None
+        # Setups start element to use to get urls from markup
         if self._start_tag != None:
             start_element = self._soup.find(self._start_tag)
             if not start_element:
@@ -261,24 +288,24 @@ class Document(Links):
                 tag_name = element.name
                 attr_name = extract.get_element_attr_by_value(element, link)
                 tag_type = extract.get_element_attr_value(element, "type")
-                # Setups base url to pass to Link instance
-                if self._base_url:
-                    base_url = self._base_url
-                else:
-                    base_link = self._get_base_link()
-                    if base_link:
-                        base_url = base_link.get_link()
-                    else:
-                        base_url = None
+                tag_rel = extract.get_element_attr_value(element, "rel")
+                # Creates Link object from collected data.
                 link_object = Link(link, tag_name, attr_name, base_url, 
-                tag_type, self._make_absoulute, self._strict)
-                links.append(link_object)
+                tag_type, tag_rel, self._make_absolute, self._strict)
+                if link_object.is_valid(False):
+                    links.append(link_object)
         return links
 
     def _get_base_link(self):
-        element = self._soup.find("base")
-        if element:
-            return Link(element, "base", None)
+        # Gets base link for markup.
+        if self._base_url:
+            return Link(self._base_url, "", None)
+        else:
+            element = self._soup.find("base")
+            if element:
+                base_url = extract.get_element_attr_value(element, "href")
+                if base_url:
+                    return Link(base_url, "base", None)
 
     def get_base_link(self):
         # Gets base link for document

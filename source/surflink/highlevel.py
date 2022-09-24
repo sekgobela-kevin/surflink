@@ -70,15 +70,13 @@ def make_urls_absoulute(base_url, urls):
     # Makes urls absoulute by joing them with their base url
     return [make_url_absoulute(base_url, url) for url in urls]
 
-def create_document(html_markup, base_url=None, attrs=None, start_tag=None,
-unique=False, make_absolute=False, strict=False):
+def create_document(html_markup, **kwargs):
     # Creates document containing links from html
-    return document.Document(html_markup, base_url, attrs, start_tag, 
-    unique, make_absolute, strict)
+    return document.Document(html_markup, **kwargs)
 
-def create_link(url, tag_name, tag_attr, base_link=None):
+def create_link(url, tag_name, tag_attr, **kwargs):
     # Creates Link object
-    return document.Link(tag_name, tag_attr, base_link)
+    return document.Link(tag_name, tag_attr, base_link, **kwargs)
 
 
 def create_links(links):
