@@ -8,21 +8,33 @@ from surflink import extract
 class Link():
     '''Stores link along with other metadata'''
     def __init__(self, link, tag_name, tag_attrs, base_link=None, type=None,
-    strict=False):
-        self.link = link
-        self.tag_name = tag_name
-        self.tag_attrs = tag_attrs
-        self.base_link = base_link
-        self.type = type
-        self.strict= strict
+    make_absolute=False, strict=False):
+        self._link = link
+        self._tag_name = tag_name
+        self._tag_attrs = tag_attrs
+        self._base_link = base_link
+        self._type = type
+        self._make_absolute = make_absolute
+        self._strict = strict
+
+
+        # base_link variable refers to base url of link.
+        # link referes to url here not Link instance.
+        if self._make_absolute:
+            if base_link != None:
+                self._link = urlmod.make_url_absolute(base_link, link)
+            else:
+                err_msg = "Base url is required to make url absoulute"
+                raise exception.BaseUrlNotExists(err_msg)
+
         
         # Tries to guess content type.
-        # COntent type from html ha spriority over guessed one.
+        # Content type from html ha spriority over guessed one.
         if type:
-            self.content_type = type
+            self._content_type = type
         else:
-            #self.content_type = resid.guess_content_type(link)
-            self.content_type = document.URL(link).content_type or ""
+            #self._content_type = resid.guess_content_type(link)
+            self._content_type = document.URL(link).content_type or ""
 
     def _is_head_resource(self):
         # Checks if link is resource usually loaded in head tag.
@@ -30,34 +42,37 @@ class Link():
 
     def _matches_tag_name(self, tag_name):
         # Checks if tag name matches link tag name
-        return self.tag_name.lower() == tag_name.lower()
+        return self._tag_name.lower() == tag_name.lower()
 
     def _matches_content_type(self, content_type):
         # Checks if provided content type matches link content type
-        if self.strict:
+        if self._strict:
             # Only content type from markup will be considered.
             # In this case 'type' attribute supplies content type.
             # Content type will not be guessed from url.
-            if self.type != None:
-                return self.type.startswith(content_type)
+            if self._type != None:
+                return self._type.startswith(content_type)
             else:
                 # Content type cannot be retrieved from markup.
                 # strict denies guessing from url.
                 return False
         else:
             # Content type may have been guessed from url.
-            return self.content_type.startswith(content_type)
+            return self._content_type.startswith(content_type)
 
     def _matches_content_type_tag_name(self, content_type, tag_name):
         # Checks if arguments matches content type and tag name.
-        # Outcomes of this method are affected by 'self.strict'.
+        # Outcomes of this method are affected by 'self._strict'.
         if self._matches_content_type(content_type):
             return True
         else:
             return self._matches_tag_name(tag_name)
 
+    def get_link(self):
+        return self._link
+
     def is_valid(self, strict=True):
-        link = self.link.lower()
+        link = self._link.lower()
         if strict:
             #return resid.is_url(link)
             return document.URL(link).supported
@@ -70,14 +85,14 @@ class Link():
                 return False
 
     def is_resource(self):
-        return self.tag_attrs == "src"
+        return self._tag_attrs == "src"
 
     def is_hyperlink(self):
-        return self.tag_attrs == "href"
+        return self._tag_attrs == "href"
 
     def is_weblink(self):
-        # return resid.is_weburl(self.link)
-        return document.WebURL(self.link).supported
+        # return resid.is_weburl(self._link)
+        return document.WebURL(self._link).supported
 
     def is_script(self):
         return self._matches_tag_name("script")
@@ -95,36 +110,36 @@ class Link():
         return self._matches_content_type_tag_name("video/", "video")
 
     def is_stylesheet(self):
-        if self.strict and not self.is_linked():
+        if self._strict and not self.is_linked():
             return False
         return self._matches_content_type("text/css")
 
     def is_javascript(self):
-        if self.strict and not self.is_script():
+        if self._strict and not self.is_script():
             return False
         return self._matches_content_type("application/javascript")
 
     def is_webpage(self):
         if not self._is_head_resource():
-            # return resid.find_resource(self.link).is_webpage()
-            return document.WebURL(self.link).is_webpage()
+            # return resid.find_resource(self._link).is_webpage()
+            return document.WebURL(self._link).is_webpage()
         return False
 
     @property
     def absolute_link(self):
-        if self.base_link != None:
-            return urlmod.make_url_absolute(self.base_link, self.link)
+        if self._base_link != None:
+            return urlmod.make_url_absolute(self._base_link, self._link)
         else:
-            return self.link
+            return self._link
 
     def __str__(self):
-        return self.link
+        return self._link
 
     def __repr__(self) -> str:
         output = "surflink.document.Link(link='{}', tag_name='{}', " +\
             "tag_attrs='{}', base_link={})"
-        return output.format(self.link, self.tag_name, self.tag_attrs, 
-        self.base_link)
+        return output.format(self._link, self._tag_name, self._tag_attrs, 
+        self._base_link)
 
 
 class Links():
@@ -137,7 +152,7 @@ class Links():
         return self._links
 
     def get_raw_links(self):
-        return list(map(lambda link:link.link, self._links))
+        return list(map(lambda link:link.get_link(), self._links))
 
     def get_valid_links(self, strict=True):
         return list(filter((lambda link:link.is_valid(strict), self._links)))
@@ -193,8 +208,8 @@ class Links():
 
 class Document(Links):
     '''Template for instances containing links from HTML/XML document'''
-    def __init__(self, markup, url=None, attrs=None, start_tag=None,
-    unique=False, strict=False):
+    def __init__(self, markup, base_url=None, attrs=None, start_tag=None,
+    unique=False, make_absoulute=False, strict=False):
         # markup: html/xml with links
         # url: url markup originates
         # attr: atributes of elements in markup to extract links.
@@ -202,9 +217,10 @@ class Document(Links):
         super().__init__(list())
         self._markup = markup # markup containg links(html, xml)
         self._attrs = attrs # attributes to get links
-        self._url = url # url of markup
+        self._base_url = base_url # url of markup
         self._unique = unique
         self._start_tag = start_tag
+        self._make_absoulute = make_absoulute
         self._strict = strict
         
         if not isinstance(markup, (str, bytes)):
@@ -212,11 +228,13 @@ class Document(Links):
             raise TypeError(err_msg.format(self._markup.__class__.name))
         
         #if url!=None and resid.is_url(url):
-        if url!=None and urlmod.is_url(url):
-            raise exception.URLError("'{}' is not url")
+        # if url!=None and urlmod.is_url(url):
+        #     raise exception.URLError("'{}' is not url")
 
         # Setup links
         # Not recommended to call method within initializer.
+        # But promise not to extend these methods.
+        # That way there wont be problems unless extended.
         self._soup = self._create_soup()
         self._links = self._extract_links()
 
@@ -239,15 +257,21 @@ class Document(Links):
             link = extract.get_link_from_element(element, self._attrs)
             if link and not (self._unique and link in links):
                 # Duplicate links not allowed if self._unique is True.
+                # Link here refers to url not Link instance.
                 tag_name = element.name
                 attr_name = extract.get_element_attr_by_value(element, link)
                 tag_type = extract.get_element_attr_value(element, "type")
-                if self._url:
-                    url = self._url
+                # Setups base url to pass to Link instance
+                if self._base_url:
+                    base_url = self._base_url
                 else:
-                    url = self._get_base_link()
-                link_object = Link(link, tag_name, attr_name, url, tag_type,
-                self._strict)
+                    base_link = self._get_base_link()
+                    if base_link:
+                        base_url = base_link.get_link()
+                    else:
+                        base_url = None
+                link_object = Link(link, tag_name, attr_name, base_url, 
+                tag_type, self._make_absoulute, self._strict)
                 links.append(link_object)
         return links
 
