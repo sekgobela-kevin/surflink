@@ -105,6 +105,7 @@ is internally used to make url absolute.
 # not provide one or want to overide html base url.
 surflink.extract_webpage_urls(html_sample, base_url="https://example.com/" 
 make_absolute=True)
+[..., 'https://example.com/pages/world', 'https://en.wikipedia.org/wiki/Food']
 ```
 
 Urls can be made absolute without requiring extracting them from html.
