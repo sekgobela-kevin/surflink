@@ -5,13 +5,22 @@ from surflink import exception
 from surflink import extract
 
 
+# Map containing tag names and possible content types.
+TAG_NAMES_CONTENT_TYPES = {
+    "img": "image/x",
+    "video": "video/x",
+    "audio": "audio/x",
+    "iframe": "text/html",
+    "script": "application/javascript"
+}
+
 class Link():
     '''Stores link along with other metadata'''
-    def __init__(self, link, tag_name, tag_attrs, base_link=None, type=None,
+    def __init__(self, link, tag_name, tag_attr, base_link=None, type=None,
     rel_attr=None, make_absolute=False, strict=False):
         self._link = link
         self._tag_name = tag_name
-        self._tag_attrs = tag_attrs
+        self._tag_attr = tag_attr
         self._base_link = base_link
         self._type = type
         self._rel_attr = rel_attr
@@ -29,42 +38,65 @@ class Link():
                 raise exception.BaseUrlNotExists(err_msg)
 
         
-        # Tries to guess content type.
-        # Content type from html ha spriority over guessed one.
+        # Tries to find/guess content type.
+        # Content type from html has priority over guessed one.
+        tag_name_lower = self._tag_name.lower()
         if type:
             self._content_type = type
-        else:
-            #self._content_type = resid.guess_content_type(link)
+        elif self._rel_attr and self._rel_attr == "stylesheet":
+            # Since type not provided then its considered css.
+            self._content_type = "text/css"
+        elif tag_name_lower in TAG_NAMES_CONTENT_TYPES:
+            # Guessed content type is preffered when it follows 
+            # content type from tag name.
+            guessed_content_type = document.URL(link).content_type
+            tag_content_type = TAG_NAMES_CONTENT_TYPES[tag_name_lower]
+            if guessed_content_type:
+                if tag_content_type.endswith("/x"):
+                    # Checks if first parts of contents are same.
+                    # This helps decide if guessed content type be used.
+                    guessed_start = guessed_content_type.split("/")[0]
+                    tag_start = tag_content_type.split("/")[0]
+                    if guessed_start == tag_start:
+                        self._content_type = guessed_content_type
+            # Checks if content type is defined and if not define one.
+            # Tag content type is used since guessed did not pass.
+            if not hasattr(self, "_content_type"):
+                self._content_type = tag_content_type
+        elif not self._strict:
+            # Content type is now guessed from url since its not strict.
             if self._is_valid(False):
                 # Link without extension will be considered html.
                 # Its important to know if link is valid.
-                self._content_type = document.WebURL(link).content_type
+                #self._content_type = resid.guess_content_type(link)
+                self._content_type = document.WebURL(link).content_type or ""
             else:
                 self._content_type = ""
+        else:
+            self._content_type = ""
+
 
     def _is_head_resource(self):
         # Checks if link is resource usually loaded in head tag.
-        return any([self.is_script(), self.is_linked()])
+        return self._tag_name.lower() in ["link", "script"]
 
     def _matches_tag_name(self, tag_name):
         # Checks if tag name matches link tag name
         return self._tag_name.lower() == tag_name.lower()
 
+    def _matches_tag_attr(self, tag_attr):
+        # Checks if tag name matches link tag name
+        return self._tag_attr.lower() == tag_attr.lower()
+
     def _matches_content_type(self, content_type):
         # Checks if provided content type matches link content type
-        if self._strict:
-            # Only content type from markup will be considered.
-            # In this case 'type' attribute supplies content type.
-            # Content type will not be guessed from url.
-            if self._type != None:
-                return self._type.startswith(content_type)
-            else:
-                # Content type cannot be retrieved from markup.
-                # strict denies guessing from url.
-                return False
-        else:
-            # Content type may have been guessed from url.
+        if self._content_type:
+            # Content type may be from different places like tag name,
+            # tag attributes or guessed from url extension.
             return self._content_type.startswith(content_type)
+        else:
+            # Content type is not available(strict may have been enabled)
+            return False
 
     def _matches_content_type_tag_name(self, content_type, tag_name):
         # Checks if arguments matches content type and tag name.
@@ -90,35 +122,56 @@ class Link():
 
     def get_link(self):
         return self._link
+
+    def get_absolute_link():
+        # Returns absolute version of link(url).
+        if self._base_link != None:
+            return urlmod.make_url_absolute(self._base_link, self._link)
+        else:
+            err_msg = "Base url is required to make url absoulute"
+            raise exception.BaseUrlNotExists(err_msg)
     
     def is_valid(self, strict=True):
         return self._is_valid(strict)
 
-
     def is_resource(self):
-        return self._tag_attrs == "src"
+        return self._matches_tag_attr("src") or self._is_head_resource()
 
     def is_hyperlink(self):
-        return self._tag_attrs == "href"
+        return self._matches_tag_name("a")
 
     def is_weblink(self):
-        # return resid.is_weburl(self._link)
-        return document.WebURL(self._link).supported
+        # Checks if link is world Wide Web link.
+        # Only if link contains http, https or ftp schemes.
+        try:
+            absolute_link = self.get_absolute_link()
+        except exception.BaseUrlNotExists:
+            absolute_link = self._link
+        finally:
+            # return resid.is_weburl(self._link)
+            return document.WebURL(absolute_link).supported
 
     def is_script(self):
-        return self._matches_tag_name("script")
+        if self._matches_tag_name("script"):
+            return True
+        elif not self._strict:
+            # Javascript url is also script url no matter if its within
+            # 'script' tag.
+            return self._matches_content_type("application/javascript")
+        else:
+            return False
 
     def is_linked(self):
         return self._matches_tag_name("link")
 
     def is_image(self):
-        return self._matches_content_type_tag_name("image/", "img")
+        return self._matches_content_type("image/")
 
     def is_audio(self):
-        return self._matches_content_type_tag_name("audio/", "audio")
+        return self._matches_content_type("audio/")
 
     def is_video(self):
-        return self._matches_content_type_tag_name("video/", "video")
+        return self._matches_content_type("video/")
 
     def is_stylesheet(self):
         if self._strict and not self.is_linked():
@@ -137,20 +190,38 @@ class Link():
                 return True
             return self._matches_content_type("application/javascript")
 
+    def is_html(self):
+        # Checks if link is refers to html file.
+        matches_content_type = self._matches_content_type("text/html")
+        # matches_content_type will be True even if url lacks extension.
+        if matches_content_type and self._is_head_resource():
+            # Avoid matching head resources as html when extension is 
+            # missing. This only applies when strict is not enabled.
+            weburl_type = document.URL(self._link).content_type
+            # weburl_type will be html even if it lacks extension.
+            if weburl_type == self._content_type:
+                # Content type may have been guessed from url.
+                # Url may have been made html even if it lacks extension.
+                url_type = document.WebURL(self._link).content_type
+                # url_type wont be html if it lacks extension.
+                return url_type == "text/html"
+        return matches_content_type
+
     def is_webpage(self):
-        if self._strict and self._is_head_resource():
+        if self._is_head_resource():
+            # Webpage will never be head resource unlike html.
+            # Even if its type is html, its just not webpage.
             return False
         else:
-            # return resid.find_resource(self._link).is_webpage()
-            # Bug, shoud be: document.WebURL(self._link).is_webpage()
-            return self._matches_content_type("text/html")
+            return self.is_html()
+
+    @property
+    def link(self):
+        return self._link
 
     @property
     def absolute_link(self):
-        if self._base_link != None:
-            return urlmod.make_url_absolute(self._base_link, self._link)
-        else:
-            return self._link
+        return self.get_absolute_link()
 
     def __str__(self):
         return self._link
@@ -209,6 +280,9 @@ class Links():
 
     def get_javascripts(self):
         return list(filter(lambda link:link.is_javascript(), self._links))
+
+    def get_htmls(self):
+        return list(filter(lambda link:link.is_html(), self._links))
 
     def get_webpages(self):
         return list(filter(lambda link:link.is_webpage(), self._links))
